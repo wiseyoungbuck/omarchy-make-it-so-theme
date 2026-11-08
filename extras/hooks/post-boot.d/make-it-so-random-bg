@@ -1,0 +1,6 @@
+#!/bin/bash
+# Make It So: start each session on a random wallpaper from the theme's rotation.
+[[ $(cat ~/.local/state/omarchy/current/theme.name 2>/dev/null) == make-it-so ]] || exit 0
+pick=$(find ~/.config/omarchy/themes/make-it-so/backgrounds ~/.config/omarchy/backgrounds/make-it-so \
+  -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.webp' -o -iname '*.png' \) 2>/dev/null | shuf -n1)
+[[ -n $pick ]] && omarchy theme bg set "$pick"

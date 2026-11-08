@@ -1,0 +1,58 @@
+# Make It So — a theme after Captain Jean-Luc Picard, and the future he lived
+#
+#   "Make it so."
+#   "The acquisition of wealth is no longer the driving force in our lives.
+#    We work to better ourselves and the rest of humanity."  — First Contact
+#   "The first duty of every Starfleet officer is to the truth."
+#                                                            — The First Duty
+#   "Things are only impossible until they're not."         — When the Bough Breaks
+#   "Seize the time… Live now. Make now always the most precious time."
+#                                                            — The Inner Light
+#
+# Something to strive toward, not just to look at: lead with clarity, listen
+# before deciding, hold to the truth, and build the future he got to live in.
+#
+# A calm deep-space ground, Earl Grey parchment text, and a single unambiguous
+# signal — the crimson of the captain's command uniform — with the gold of his
+# four pips beside it.
+
+mode                     = "dark"
+
+# Signal (uniform crimson, lifted to read as text), selection and the muted ramp
+accent                   = "#e8666e"
+selection                = "#4a2329"
+muted                    = "#6b6f80"
+
+# Ground: space seen through the ready-room window, deepest surface up
+background               = "#11141c"
+dark_background          = "#0c0e14"
+darker_background        = "#08090e"
+lighter_background       = "#1c202b"
+
+# Text: Earl Grey, hot — from de-emphasised up to the cursor
+foreground               = "#e3d8c3"
+dark_foreground          = "#8d8778"
+light_foreground         = "#f1e4c9"
+bright_foreground        = "#fff4dd"
+
+# Window borders: the command uniform itself (#9b1c24) into captain's-pip gold
+hyprland_active_border   = "rgba(cc3a40ee) rgba(b3232cee) rgba(f2c272ee) 45deg"
+hyprland_inactive_border = "rgba(4a2329aa)"
+
+# Named colours
+red                      = "#e05560"   # command uniform crimson, text-safe
+yellow                   = "#e2b25a"   # captain's pips
+orange                   = "#e08a4f"   # console amber
+green                    = "#93ad7c"   # Château Picard vines, La Barre
+cyan                     = "#6db4c4"   # sciences teal, warp glow
+blue                     = "#7f96d4"   # starfield through the viewport
+magenta                  = "#b591c8"   # nebula lavender
+brown                    = "#8c6849"   # ready-room wood, tea
+
+# Bright variants — lifted toward the Enterprise-D interior: LCARS panels, sand bulkheads
+bright_red               = "#f2878a"   # LCARS salmon
+bright_yellow            = "#ffcc8a"   # LCARS peach-gold
+bright_green             = "#bcd4a3"
+bright_cyan              = "#9ad6e0"
+bright_blue              = "#aab4f5"   # LCARS periwinkle
+bright_magenta           = "#d8a8d8"   # LCARS lavender

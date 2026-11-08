@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# Toggle the Make It So ambient engine hum (an original synthesized loop).
+# While it is on, it pauses itself whenever music or video is playing in a media
+# player, and resumes a few seconds after it stops. Sound effects are ignored.
+# Usage: engine-hum [toggle|on|off|status|volume [0-100]]
+#
+#   volume        print the hum's volume
+#   volume N      set it (saved for next time; applied live if the hum is on)
+#
+# Environment (mostly for tests):
+#   ENGINE_HUM_STATE         where the chosen volume is kept
+#                            (default ~/.local/state/make-it-so/engine-hum-volume)
+#   ENGINE_HUM_VOLUME        starting volume when nothing has been saved (default 75)
+#   ENGINE_HUM_SOUND         sound file to loop
+#   ENGINE_HUM_TAG           mpv title used to find our player (default engine-hum)
+#   ENGINE_HUM_SOCK          mpv IPC socket path
+#   ENGINE_HUM_RESUME_AFTER  seconds without music before the hum resumes (default 4)
+#   ENGINE_HUM_QUIET=1       skip desktop notifications
+set -euo pipefail
+SOUND="${ENGINE_HUM_SOUND:-$HOME/.local/share/make-it-so/engine-hum.flac}"
+TAG="${ENGINE_HUM_TAG:-engine-hum}"
+SOCK="${ENGINE_HUM_SOCK:-${XDG_RUNTIME_DIR:-/tmp}/$TAG.sock}"
+RESUME_AFTER="${ENGINE_HUM_RESUME_AFTER:-4}"
+STATE="${ENGINE_HUM_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/make-it-so/engine-hum-volume}"
+
+running() { pgrep -f "^mpv .*--title=$TAG( |$)" >/dev/null; }
+
+notify() {
+  [[ ${ENGINE_HUM_QUIET:-0} == 1 ]] && return 0
+  notify-send -a "Make It So" "$@" 2>/dev/null || true
+}
+
+# Music or video playing in a media player (Spotify, browser tabs, mpv, VLC…),
+# as reported over MPRIS. Notification and UI sound effects don't register, so
+# they never interrupt the hum. Our own mpv is skipped by PID.
+music_playing() {
+  local self name pid
+  self=$(pgrep -f "^mpv .*--title=$TAG( |$)" | head -1)
+  while read -r name pid _; do
+    [[ $name == org.mpris.MediaPlayer2.* && $pid != "$self" ]] || continue
+    [[ $(busctl --user get-property "$name" /org/mpris/MediaPlayer2 \
+          org.mpris.MediaPlayer2.Player PlaybackStatus 2>/dev/null) == 's "Playing"' ]] && return 0
+  done < <(busctl --user list --no-legend 2>/dev/null)
+  return 1
+}
+
+get_volume() {
+  local v
+  v=$(cat "$STATE" 2>/dev/null || true)
+  [[ $v =~ ^[0-9]+$ ]] || v="${ENGINE_HUM_VOLUME:-75}"
+  echo "$v"
+}
+
+set_volume() {
+  local v="$1"
+  [[ $v =~ ^[0-9]+$ ]] || { echo "volume must be a whole number 0-100" >&2; exit 2; }
+  v=$((10#$v)); (( v > 100 )) && v=100
+  mkdir -p "$(dirname "$STATE")"
+  echo "$v" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+  running && printf '{"command":["set_property","volume",%s]}\n' "$v" |
+    socat - "UNIX-CONNECT:$SOCK" >/dev/null 2>&1 || true
+  echo "$v"
+}
+
+set_pause() {
+  printf '{"command":["set_property","pause",%s]}\n' "$1" | socat - "UNIX-CONNECT:$SOCK" >/dev/null 2>&1 || true
+}
+
+# Duck out for music. Each watcher is bound to the one mpv it was started with,
+# so a quick off/on can never leave two watchers steering the same hum.
+watch() {
+  local player="$1" paused=false quiet=0
+  sleep 1
+  while kill -0 "$player" 2>/dev/null; do
+    if music_playing; then
+      quiet=0
+      $paused || { set_pause true; paused=true; }
+    elif $paused; then
+      quiet=$((quiet + 1))
+      if (( quiet >= RESUME_AFTER )); then set_pause false; paused=false; fi
+    fi
+    sleep 1
+  done
+}
+
+start() {
+  running && return 0
+  # --load-scripts=no keeps mpv-mpris out, so the hum never shows up as "music".
+  setsid mpv --no-video --really-quiet --load-scripts=no --loop-file=inf \
+    --volume="$(get_volume)" --input-ipc-server="$SOCK" \
+    --title="$TAG" "$SOUND" >/dev/null 2>&1 < /dev/null &
+  local player=$!
+  setsid "$0" watch "$player" >/dev/null 2>&1 < /dev/null &
+  # Return only once mpv is really up, so an immediate off/status sees it.
+  local i
+  for i in $(seq 40); do running && break; kill -0 "$player" 2>/dev/null || break; sleep 0.05; done
+  notify "Engine hum on" "Make it so."
+}
+
+stop() {
+  pkill -f "^mpv .*--title=$TAG( |$)" || true
+  # Return only once it is really gone, so an immediate `on` starts a fresh one.
+  local i
+  for i in $(seq 40); do running || break; sleep 0.05; done
+  running && pkill -KILL -f "^mpv .*--title=$TAG( |$)" || true
+  notify "Engine hum off"
+}
+
+case "${1:-toggle}" in
+  on) start ;;
+  off) stop ;;
+  toggle) if running; then stop; else start; fi ;;
+  watch) [[ ${2:-} =~ ^[0-9]+$ ]] || { echo "usage: ${0##*/} watch <mpv-pid>" >&2; exit 2; }; watch "$2" ;;
+  volume) if [[ -n ${2:-} ]]; then set_volume "$2"; else get_volume; fi ;;
+  status)
+    if running; then echo '{"text":"󰕾","tooltip":"Engine hum: on — click to disengage","class":"active"}'
+    else echo '{"text":"󰖁","tooltip":"Engine hum: off — click to engage"}'; fi ;;
+  *) echo "usage: ${0##*/} [toggle|on|off|status|volume [0-100]]" >&2; exit 2 ;;
+esac

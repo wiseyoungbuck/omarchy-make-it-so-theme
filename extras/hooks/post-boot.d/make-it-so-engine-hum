@@ -1,0 +1,4 @@
+#!/bin/bash
+# Make It So: engage the ambient engine hum at login (toggle with Super+Alt+E or the bar delta).
+[[ $(cat ~/.local/state/omarchy/current/theme.name 2>/dev/null) == make-it-so ]] || exit 0
+~/.local/bin/engine-hum on
