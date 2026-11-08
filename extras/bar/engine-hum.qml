@@ -3,6 +3,8 @@
 //   right click  toggle the hum
 //   scroll       volume up/down
 // Icon: the bar's text colour while on, dimmed while off, like Omarchy's own.
+// The Starfleet delta is the default; {"icon": "plain"} on this widget's
+// shell.json entry swaps in a generic rocket glyph ("Engage") instead.
 import QtQuick
 import QtQuick.Shapes
 import Quickshell
@@ -23,6 +25,9 @@ Panel {
   readonly property color panelFg: bar ? bar.foreground : Commons.Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string script: Quickshell.env("HOME") + "/.local/bin/engine-hum"
+  readonly property bool plainIcon: setting("icon", "delta") === "plain"
+  readonly property string plainGlyph: "\u{f0463}"   // nf-md-rocket
+  readonly property color iconColor: running ? fg : Qt.darker(fg, 1.55)
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -93,16 +98,10 @@ Panel {
     bar: root.bar
     tooltipText: root.opened ? "" : (root.running ? "Engine hum: on" : "Engine hum: off")
                  + " — " + root.volume + "%"
-    iconComponent: Component {
-      Item {
-        Delta {
-          x: (parent.width - width) / 2
-          y: (parent.height - height) / 2
-          iconSize: button.iconSize
-          color: root.running ? root.fg : Qt.darker(root.fg, 1.55)
-        }
-      }
-    }
+    text: root.plainIcon ? root.plainGlyph : ""
+    foreground: root.iconColor
+    useActiveColor: false
+    iconComponent: root.plainIcon ? null : barDelta
     onPressed: function(code) {
       if (code === Qt.RightButton) root.toggleHum()
       else if (code === Qt.LeftButton) { root.refresh(); root.toggle() }
@@ -141,12 +140,7 @@ Panel {
           foreground: root.panelFg
           fontFamily: root.fontFamily
           iconOpacity: root.running ? 1.0 : 0.5
-          iconComponent: Component {
-            Delta {
-              iconSize: Style.font.display
-              color: root.panelFg
-            }
-          }
+          iconComponent: root.plainIcon ? heroGlyph : heroDelta
           trailingControl: Component {
             ToggleSwitch {
               checked: root.running
@@ -187,6 +181,29 @@ Panel {
           }
         }
       }
+    }
+  }
+
+  Component {
+    id: barDelta
+    Item {
+      Delta {
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
+        iconSize: button.iconSize
+        color: root.running ? root.fg : Qt.darker(root.fg, 1.55)
+      }
+    }
+  }
+  Component { id: heroDelta; Delta { iconSize: Style.font.display; color: root.panelFg } }
+  Component {
+    id: heroGlyph
+    Text {
+      textFormat: Text.PlainText
+      text: root.plainGlyph
+      color: root.panelFg
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.display
     }
   }
 

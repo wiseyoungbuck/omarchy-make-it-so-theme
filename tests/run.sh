@@ -133,8 +133,17 @@ test_repo_ships_no_third_party_media() {
   # Only generated art: no stills, screencaps or ripped audio anywhere in the tree.
   local found
   found=$(cd "$ROOT" && git ls-files --cached --others --exclude-standard 2>/dev/null |
-          grep -iE '\.(jpe?g|gif|mp3|ogg|opus|wav|m4a|mp4|mkv|webm)$' || true)
+          grep -iE '\.(jpe?g|gif|png|webp|bmp|tiff?|mp3|ogg|opus|wav|m4a|flac|mp4|mkv|webm)$' |
+          grep -vxE 'preview\.png|backgrounds/[1-4]-[a-z-]+\.webp|extras/share/engine-hum\.flac' || true)
   [[ -z $found ]] || die "unexpected media in the repo: $found"
+}
+
+test_notification_icon_is_the_same_delta() {
+  local qml_path svg_path
+  qml_path=$(sed -nE 's/.*PathSvg \{ path: "([^"]*)" \}.*/\1/p' "$QML")
+  svg_path=$(sed -nE 's/.*<path fill="[^"]*" d="([^"]*)".*/\1/p' "$ROOT/extras/share/delta.svg")
+  assert_eq "$svg_path" "$qml_path" "notification icon and bar icon must be the same outline"
+  grep -qF -- '-i "$icon"' "$HUM" || die "notifications must carry the delta icon"
 }
 
 # ------------------------------------------------------------ engine-hum: unit
@@ -412,6 +421,9 @@ test_bar_icon_box_matches_its_artwork() {
 
 install_home() {
   export HOME="$WORK/inst-$1" MAKE_IT_SO_NO_RELOAD=1
+  # uninstall.sh runs `engine-hum off`; aim it at a test name so it can never
+  # stop the real hum playing on this machine.
+  export ENGINE_HUM_TAG="mis-test-$$-inst"
   mkdir -p "$HOME/.config/hypr" "$HOME/.config/omarchy"
   printf -- '-- user bindings\no.bind("SUPER + RETURN", "Terminal", "ghostty")\n' > "$HOME/.config/hypr/bindings.lua"
   cat > "$HOME/.config/omarchy/shell.json" <<'EOF'
@@ -433,6 +445,7 @@ test_installer_puts_everything_in_place_once() {
   done
   cmp -s "$ROOT/extras/share/engine-hum.flac" "$HOME/.local/share/make-it-so/engine-hum.flac" || die "sound not installed"
   cmp -s "$QML" "$HOME/.config/omarchy/bar/modules/engine-hum.qml" || die "bar icon not installed"
+  cmp -s "$ROOT/extras/share/delta.svg" "$HOME/.local/share/make-it-so/delta.svg" || die "notification icon not installed"
   assert_eq "$(grep -c 'engine-hum toggle' "$HOME/.config/hypr/bindings.lua")" 1 "keybinding lines"
   grep -q 'SUPER + ALT + E' "$HOME/.config/hypr/bindings.lua" || die "wrong key"
   grep -q 'SUPER + RETURN' "$HOME/.config/hypr/bindings.lua" || die "clobbered existing bindings"
@@ -462,6 +475,34 @@ test_uninstaller_removes_exactly_what_was_added() {
   ls "$HOME/.config/omarchy/hooks/post-boot.d/" 2>/dev/null | grep -q make-it-so && die "hooks left behind"
   diff <(grep -v '^$' "$WORK/bindings.orig") <(grep -v '^$' "$HOME/.config/hypr/bindings.lua") >/dev/null || die "bindings.lua not restored"
   diff "$WORK/shell.orig" <(jq -S . "$HOME/.config/omarchy/shell.json") >/dev/null || die "shell.json not restored"
+}
+
+test_suite_never_touches_the_real_hum() {
+  # Every place the tests run engine-hum must carry a test tag.
+  grep -q 'export ENGINE_HUM_TAG="mis-test-$$-inst"' "$ROOT/tests/run.sh" || die "installer tests must use a test tag"
+  grep -qE 'export ENGINE_HUM_TAG="mis-test-\$\$"' "$ROOT/tests/run.sh" || die "hum tests must use a test tag"
+}
+
+test_installer_switches_the_bar_icon() {
+  need jq mpv socat busctl
+  install_home d
+  "$ROOT/extras/install.sh" --plain-icon >/dev/null || die "install --plain-icon failed"
+  assert_eq "$(jq -c '.bar.layout.right[] | select(.id=="engine-hum")' "$HOME/.config/omarchy/shell.json")" \
+            '{"id":"engine-hum","type":"qml","icon":"plain"}'
+  "$ROOT/extras/install.sh" >/dev/null
+  assert_eq "$(jq -r '.bar.layout.right[] | select(.id=="engine-hum") | .icon' "$HOME/.config/omarchy/shell.json")" plain \
+            "a plain re-install keeps the chosen icon"
+  "$ROOT/extras/install.sh" --delta-icon >/dev/null
+  assert_eq "$(jq -c '.bar.layout.right[] | select(.id=="engine-hum")' "$HOME/.config/omarchy/shell.json")" \
+            '{"id":"engine-hum","type":"qml"}'
+  local code=0; "$ROOT/extras/install.sh" --bogus >/dev/null 2>&1 || code=$?
+  assert_eq "$code" 2 "unknown options rejected"
+}
+
+test_bar_icon_has_a_plain_fallback() {
+  grep -q 'readonly property bool plainIcon: setting("icon", "delta") === "plain"' "$QML" || die "no icon setting"
+  grep -q 'iconComponent: root.plainIcon ? null : barDelta' "$QML" || die "bar does not switch to the glyph"
+  grep -q 'iconComponent: root.plainIcon ? heroGlyph : heroDelta' "$QML" || die "panel does not switch to the glyph"
 }
 
 # ------------------------------------------- optional: this machine vs. repo

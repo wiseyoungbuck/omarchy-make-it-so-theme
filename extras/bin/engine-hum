@@ -27,7 +27,8 @@ running() { pgrep -f "^mpv .*--title=$TAG( |$)" >/dev/null; }
 
 notify() {
   [[ ${ENGINE_HUM_QUIET:-0} == 1 ]] && return 0
-  notify-send -a "Make It So" "$@" 2>/dev/null || true
+  local icon="${ENGINE_HUM_ICON:-$HOME/.local/share/make-it-so/delta.svg}"
+  notify-send -a "Make It So" ${icon:+-i "$icon"} "$@" 2>/dev/null || true
 }
 
 # Music or video playing in a media player (Spotify, browser tabs, mpv, VLC…),
