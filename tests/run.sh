@@ -98,11 +98,15 @@ test_theme_root_has_nothing_omarchy_would_strip() {
   return 0
 }
 
-test_backgrounds_are_only_the_four_originals_at_4k() {
+test_backgrounds_are_only_the_eight_originals_at_4k() {
   local want="1-seize-the-time.webp
 2-things-are-only-impossible-until-they-are-not.webp
 3-we-work-to-better-ourselves.webp
-4-make-it-so.webp"
+4-make-it-so.webp
+5-lets-see-whats-out-there.webp
+6-ten-forward.webp
+7-tea-earl-grey-hot.webp
+8-the-skys-the-limit.webp"
   # Guard against shipping the downloaded (copyrighted) screencaps by mistake.
   assert_eq "$(ls "$ROOT/backgrounds")" "$want" "backgrounds/ must hold only the generated originals"
   need magick
@@ -117,6 +121,51 @@ test_generator_writes_the_shipped_background_names() {
   for f in "$ROOT"/backgrounds/*; do
     grep -qF "\"$(basename "$f")\"" "$ROOT/tools/make_bgs.py" || die "$(basename "$f") is not produced by tools/make_bgs.py"
   done
+}
+
+test_dedication_is_in_place() {
+  local phrase
+  for phrase in "In honor of" "Patrick Stewart" "Gene Roddenberry" "better future for all humanity" \
+                "Neither man nor anyone connected to Star Trek has endorsed it"; do
+    grep -qF "$phrase" "$ROOT/README.md" || die "README.md lost its dedication: '$phrase'"
+  done
+}
+
+test_unlock_art_is_ready_for_plymouth() {
+  need magick
+  assert_eq "$(magick identify -format '%wx%h' "$ROOT/unlock.png")" "800x188" "unlock.png size"
+  assert_eq "$(magick identify -format '%[opaque]' "$ROOT/unlock.png")" "False" "unlock.png must be transparent"
+  assert_eq "$(magick identify -format '%wx%h' "$ROOT/preview-unlock.png")" "1920x1080" "preview-unlock.png size"
+}
+
+test_hand_tuned_app_files_have_every_key() {
+  local tpl=/usr/share/omarchy/default/themed f k
+  [[ -d $tpl ]] || skip "needs Omarchy's templates to compare against"
+  for f in btop.theme shell.toml; do
+    for k in $(grep -oE '^(theme\[[a-z_0-9]+\]|[a-z-]+)[[:space:]]*=' "$tpl/$f.tpl" | sed -E 's/[[:space:]]*=$//' | sort -u); do
+      grep -qE "^$(printf '%s' "$k" | sed 's/[][]/\\&/g')[[:space:]]*=" "$ROOT/$f" || die "$f is missing $k (Omarchy's template has it)"
+    done
+  done
+}
+
+test_hand_tuned_app_files_keep_their_character() {
+  assert_eq "$(tr -d '[:space:]' < "$ROOT/keyboard.rgb")" "#b3232c" "keyboard lights in uniform crimson"
+  grep -qx 'theme\[title\]="#e2b25a"' "$ROOT/btop.theme" || die "btop titles should be pip gold"
+  grep -qx 'theme\[cpu_end\]="#e8666e"' "$ROOT/btop.theme" || die "btop CPU should heat to crimson"
+  ! grep -q '{{' "$ROOT/btop.theme" "$ROOT/shell.toml" || die "unrendered template placeholders"
+  py "$ROOT/shell.toml" <<'PY' || exit 1
+import re, sys
+s = open(sys.argv[1]).read()
+def get(sect, key):
+    m = re.search(r'(?ms)^\[' + re.escape(sect) + r'\]\n(.*?)(?=^\[|\Z)', s)
+    v = re.search(r'(?m)^' + re.escape(key) + r'\s*=\s*"([^"]*)"', m.group(1))
+    return v.group(1) if v else None
+want = {("bar", "active"): "#e8666e", ("notifications", "countdown"): "#e2b25a",
+        ("polkit", "accent"): "#e2b25a", ("image-picker", "selected-border"): "#e2b25a",
+        ("menu", "selected-text"): "#e8666e"}
+bad = [f"[{a}] {b} = {get(a, b)} (want {v})" for (a, b), v in want.items() if get(a, b) != v]
+if bad: print("    shell.toml drifted: " + "; ".join(bad)); sys.exit(1)
+PY
 }
 
 test_fan_work_disclaimers_are_in_place() {
@@ -134,7 +183,7 @@ test_repo_ships_no_third_party_media() {
   local found
   found=$(cd "$ROOT" && git ls-files --cached --others --exclude-standard 2>/dev/null |
           grep -iE '\.(jpe?g|gif|png|webp|bmp|tiff?|mp3|ogg|opus|wav|m4a|flac|mp4|mkv|webm)$' |
-          grep -vxE 'preview\.png|backgrounds/[1-4]-[a-z-]+\.webp|extras/share/engine-hum\.flac' || true)
+          grep -vxE '(preview|preview-unlock|unlock)\.png|backgrounds/[1-8]-[a-z-]+\.webp|extras/share/engine-hum\.flac' || true)
   [[ -z $found ]] || die "unexpected media in the repo: $found"
 }
 

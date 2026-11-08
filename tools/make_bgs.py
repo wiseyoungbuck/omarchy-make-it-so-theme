@@ -1,10 +1,10 @@
 """Generate the original wallpapers for the Make It So Omarchy theme.
 
-usage: uv run --with numpy --with pillow python tools/make_bgs.py backgrounds/
+usage: uv run --with numpy --with pillow python tools/make_bgs.py backgrounds/ [names...]
 """
 import sys
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 W, H = 3840, 2160
 OUT = sys.argv[1]
@@ -56,10 +56,19 @@ def noise(scale, octaves=4, seed=0):
     return acc / acc.max()
 
 
+# Final lift: opens the shadows a touch (gamma 0.82, gain 1.04) so the art reads on
+# any monitor while the deep navy ground stays navy.
+LIFT = (255 * (np.arange(256) / 255) ** 0.82 * 1.04).clip(0, 255).astype(np.uint8)
+ONLY = set(sys.argv[2:])  # optionally regenerate just these files
+
+
 def save(img, name):
-    # gentle film grain to avoid banding
+    # gentle film grain to avoid banding (drawn even when skipped, so seeds stay stable)
     img = img + rng.normal(0, 1.6, img.shape).astype(np.float32)
-    Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).save(f"{OUT}/{name}", quality=92, method=6)
+    if ONLY and name not in ONLY:
+        return
+    out = LIFT[np.clip(img, 0, 255).astype(np.uint8)]
+    Image.fromarray(out).save(f"{OUT}/{name}", quality=92, method=6)
     print("wrote", name)
 
 
@@ -162,3 +171,101 @@ for k in range(4):
     ring = np.clip(1 - np.abs(dd - 13), 0, 1) * 0.6
     img = img * (1 - pip[..., None]) + GOLD * pip[..., None] * 0.95 + GOLD * ring[..., None] * 0.4
 save(img, "4-make-it-so.webp")
+
+
+# 5. "Let's see what's out there." A nebula opening onto deep space, one bright star.
+img = vertical(DEEP, BG)
+n1, n2 = noise(1800, 6, seed=11), noise(900, 5, seed=12)
+cloud = np.clip((n1 - 0.42) * 2.4, 0, 1) ** 1.6
+wisp = np.clip((n2 - 0.5) * 3.0, 0, 1) ** 2
+band = np.exp(-((yy - (H * 0.55 - (xx - W * 0.5) * 0.35)) / (H * 0.30)) ** 2)
+img += (LAV * 0.26 + BLUE * 0.12) * (cloud * band)[..., None]
+img += hexc("#6db4c4") * 0.16 * (wisp * band)[..., None]
+img += RED * 0.16 * (cloud * wisp * band)[..., None]
+img = stars(img, 6000)
+sx, sy = W * 0.66, H * 0.40
+sd = np.sqrt((xx - sx) ** 2 + (yy - sy) ** 2)
+spikes = (np.exp(-np.abs(yy - sy) / 2.0) * np.exp(-np.abs(xx - sx) / 150)
+          + np.exp(-np.abs(xx - sx) / 2.0) * np.exp(-np.abs(yy - sy) / 110))
+img += CREAM * (np.exp(-sd / 7) * 1.4 + np.exp(-sd / 90) * 0.25 + spikes * 0.35)[..., None]
+save(img, "5-lets-see-whats-out-there.webp")
+
+# 6. Ten Forward: the long window, stars stretched to light beyond it.
+img = np.full((H, W, 3), DEEP * 0.7, np.float32)
+top, bot = H * 0.18, H * 0.80
+win = (yy > top) & (yy < bot)
+streaks = np.zeros((H, W), np.float32)
+for _ in range(260):
+    y0 = rng.uniform(top, bot)
+    x0 = rng.uniform(-W * 0.2, W)
+    length = rng.uniform(W * 0.03, W * 0.30)
+    b = rng.power(4) * rng.uniform(0.4, 1.0)
+    yi = int(y0)
+    xs = slice(max(0, int(x0)), min(W, int(x0 + length)))
+    ramp = np.linspace(0, 1, xs.stop - xs.start) ** 2 if xs.stop > xs.start else []
+    if len(ramp):
+        streaks[yi, xs] = np.maximum(streaks[yi, xs], ramp * b)
+blur = Image.fromarray((streaks * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.6))
+st = np.asarray(blur, np.float32) / 255 * 1.6
+sky = vertical(DEEP, BG) + (BLUE * 0.10 + LAV * 0.05) * np.exp(-((yy - H * 0.5) / (H * 0.25)) ** 2)[..., None]
+sky += (CREAM * 0.75 + BLUE * 0.25) * np.clip(st, 0, 1)[..., None]
+img = np.where(win[..., None], sky, img)
+# mullions: dark struts leaning outward from the centre, like the lounge's long window
+for k in range(-3, 4):
+    cx = W * 0.5 + k * W * 0.16
+    lean = k * 0.06
+    xline = cx + (yy - H * 0.5) * lean
+    m = (np.abs(xx - xline) < 26) & win
+    img = np.where(m[..., None], DEEP * 0.5, img)
+# sill and ceiling edges catch a little warm light
+img += GOLD * 0.35 * np.exp(-np.abs(yy - bot) / 3)[..., None]
+img += WOOD * 0.25 * np.exp(-np.abs(yy - top) / 3)[..., None]
+img += WOOD * 0.08 * np.clip((yy - bot) / (H - bot), 0, 1)[..., None] * (yy > bot)[..., None]
+save(img, "6-ten-forward.webp")
+
+# 7. Tea, Earl Grey, hot. Steam rising through warm lamplight.
+img = vertical(BG, DEEP)
+img += GOLD * 0.22 * np.exp(-((xx - W * 0.5) ** 2 / (W * 0.18) ** 2 + (yy - H * 1.02) ** 2 / (H * 0.35) ** 2))[..., None]
+img += RED * 0.10 * np.exp(-((xx - W * 0.5) ** 2 / (W * 0.40) ** 2 + (yy - H * 1.1) ** 2 / (H * 0.6) ** 2))[..., None]
+steam = Image.new("L", (W, H), 0)
+sd_ = ImageDraw.Draw(steam)
+for k in range(5):
+    ph, amp, wl = rng.uniform(0, 6.28), rng.uniform(60, 200), rng.uniform(700, 1400)
+    base = W * 0.5 + (k - 2) * 50
+    pts = []
+    for y in np.linspace(H * 0.92, H * 0.12, 400):
+        rise = (H * 0.92 - y) / (H * 0.8)
+        x = base + amp * rise ** 1.3 * np.sin(y / wl * 6.28 + ph + rise * 2) + (k - 2) * 140 * rise ** 1.5
+        pts.append((x, y))
+    sd_.line(pts, fill=int(150 - 20 * abs(k - 2)), width=22)
+steam = steam.filter(ImageFilter.GaussianBlur(48))
+sv = np.asarray(steam, np.float32) / 255
+fade = np.clip((yy - H * 0.12) / (H * 0.5), 0, 1) * np.clip((H * 0.95 - yy) / (H * 0.12), 0, 1)
+img += (CREAM * 0.9) * (sv * fade * 0.9)[..., None]
+save(img, "7-tea-earl-grey-hot.webp")
+
+# 8. "...and the sky's the limit." A ringed giant at the edge of dawn.
+img = vertical(DEEP, BG)
+img = stars(img, 3500)
+pcx, pcy, pr = W * 0.70, H * 0.78, H * 0.62
+pd = np.sqrt((xx - pcx) ** 2 + (yy - pcy) ** 2)
+disk = pd < pr
+lat = (yy - pcy) / pr
+bands = 0.5 + 0.25 * np.sin(lat * 23 + np.sin(lat * 7) * 1.5) + 0.15 * np.sin(lat * 61 + 1.3) + 0.1 * np.sin(lat * 9)
+light = np.clip(((pcx - xx) * 0.8 + (pcy - yy) * 0.6) / pr + 0.15, 0, 1) ** 1.8
+body = (RED * 0.42 * bands[..., None] + (GOLD * 0.22 + WOOD * 0.25) * (1 - bands)[..., None]) * light[..., None] + DEEP * 0.4
+limb = np.exp(-np.clip(pr - pd, 0, None) / 18) * light
+body += GOLD * 0.6 * limb[..., None]
+# ring: a thin tilted ellipse; the part in front of the planet is drawn over it
+ang = -0.32
+rx = (xx - pcx) * np.cos(ang) + (yy - pcy) * np.sin(ang)
+ry = -(xx - pcx) * np.sin(ang) + (yy - pcy) * np.cos(ang)
+re_ = np.sqrt((rx / (pr * 1.9)) ** 2 + (ry / (pr * 0.36)) ** 2)
+ringv = np.exp(-((re_ - 1.0) / 0.035) ** 2) * (0.6 + 0.4 * np.sin(re_ * 160))
+front = ry > 0
+img = np.where(disk[..., None], body, img)
+ringcol = (CREAM * 0.55 + GOLD * 0.45) * (0.25 + 0.75 * np.clip((pcx + pr - xx) / (2 * pr), 0, 1))[..., None]
+show = (~disk) | front
+img = img * (1 - (ringv * show * 0.85)[..., None]) + ringcol * (ringv * show * 0.85)[..., None]
+img += RED * 0.12 * np.exp(-np.clip(pd - pr, 0, None) / 80)[..., None] * (~disk)[..., None] * light[..., None]
+save(img, "8-the-skys-the-limit.webp")
